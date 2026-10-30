@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mark Grainger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Manrope:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--navy:#0d1830;--navy-2:#16244a;--gold:#c9a24a;--gold-soft:#e6cf8f;--ink:#f3eee2;--err:#ff8a7a}
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{font-family:Manrope,system-ui,sans-serif;color:var(--ink);background:var(--navy)}
+  [hidden]{display:none!important}
+
+  /* Gate */
+  .gate{min-height:100%;display:grid;place-items:center;padding:32px 20px;
+    background:radial-gradient(120% 80% at 50% 0%,var(--navy-2),var(--navy))}
+  .panel{width:100%;max-width:380px}
+  .mark{font-family:"DM Serif Display",serif;font-size:clamp(56px,14vw,88px);line-height:.9;
+    color:var(--gold);letter-spacing:-.01em}
+  .sub{margin:14px 0 36px;color:#b9c0d4;font-size:15px;line-height:1.5}
+  label{display:block;font-size:13px;font-weight:600;margin:0 0 6px;color:var(--gold-soft)}
+  input{width:100%;padding:13px 14px;margin-bottom:18px;font:inherit;color:var(--ink);
+    background:transparent;border:1px solid #3a4870;border-radius:2px}
+  input:focus{outline:none;border-color:var(--gold)}
+  button{font:inherit;cursor:pointer}
+  .primary{width:100%;padding:14px;font-weight:600;color:var(--navy);background:var(--gold);
+    border:0;border-radius:2px}
+  .primary:hover{background:var(--gold-soft)}
+  .primary:disabled{opacity:.6;cursor:wait}
+  .switch{margin-top:20px;font-size:14px;color:#b9c0d4}
+  .link{background:none;border:0;padding:0;color:var(--gold-soft);text-decoration:underline;text-underline-offset:3px}
+  .msg{min-height:20px;margin:-6px 0 14px;font-size:14px;color:var(--err)}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+
+  /* Photo */
+  .photo{position:fixed;inset:0;background:#000}
+  .photo img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.2s ease}
+  .photo img.in{opacity:1}
+  .signout{position:fixed;right:16px;bottom:16px;padding:9px 14px;font-size:13px;
+    color:var(--ink);background:rgba(13,24,48,.65);border:1px solid rgba(201,162,74,.5);border-radius:2px;
+    backdrop-filter:blur(6px)}
+  @media (prefers-reduced-motion:reduce){.photo img{transition:none}}
+</style>
+</head>
+<body>
+
+<main class="gate" id="gate">
+  <div class="panel">
+    <div class="mark">Mark</div>
+    <p class="sub" id="sub">Create an account to see the page.</p>
+    <form id="form" novalidate>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required>
+      <label for="pw">Password</label>
+      <input id="pw" type="password" autocomplete="new-password" minlength="6" required>
+      <p class="msg" id="msg" role="alert"></p>
+      <button class="primary" id="go" type="submit">Create account</button>
+    </form>
+    <p class="switch"><span id="q">Already have an account?</span>
+      <button class="link" id="toggle" type="button">Sign in</button></p>
+  </div>
+</main>
+
+<section class="photo" id="photo" hidden>
+  <img id="img" alt="Mark Grainger">
+  <button class="signout" id="out">Sign out</button>
+</section>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { firebaseConfig, PHOTO_PATH } from "./firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const storage = getStorage(app);
+const $ = id => document.getElementById(id);
+
+let mode = "signup";
+const copy = {
+  signup:{sub:"Create an account to see the page.",go:"Create account",q:"Already have an account?",t:"Sign in",ac:"new-password"},
+  signin:{sub:"Sign in to see the page.",go:"Sign in",q:"New here?",t:"Create an account",ac:"current-password"}
+};
+function setMode(m){
+  mode=m; const c=copy[m];
+  $("sub").textContent=c.sub; $("go").textContent=c.go; $("q").textContent=c.q;
+  $("toggle").textContent=c.t; $("pw").autocomplete=c.ac; $("msg").textContent="";
+}
+$("toggle").onclick=()=>setMode(mode==="signup"?"signin":"signup");
+
+const errors={
+  "auth/email-already-in-use":"That email already has an account. Sign in instead.",
+  "auth/invalid-email":"Enter a valid email address.",
+  "auth/weak-password":"Use a password with at least 6 characters.",
+  "auth/invalid-credential":"Email or password is incorrect.",
+  "auth/too-many-requests":"Too many attempts. Wait a minute and try again."
+};
+
+$("form").onsubmit=async e=>{
+  e.preventDefault();
+  const email=$("email").value.trim(), pw=$("pw").value;
+  $("go").disabled=true; $("msg").textContent="";
+  try{
+    mode==="signup" ? await createUserWithEmailAndPassword(auth,email,pw)
+                    : await signInWithEmailAndPassword(auth,email,pw);
+  }catch(err){
+    $("msg").textContent=errors[err.code]||"Something went wrong. Try again.";
+  }finally{ $("go").disabled=false; }
+};
+
+$("out").onclick=()=>signOut(auth);
+
+onAuthStateChanged(auth, async user=>{
+  if(!user){ $("photo").hidden=true; $("gate").hidden=false; $("img").removeAttribute("src"); $("img").classList.remove("in"); return; }
+  $("gate").hidden=true; $("photo").hidden=false;
+  try{
+    const url=await getDownloadURL(ref(storage,PHOTO_PATH));
+    $("img").onload=()=>$("img").classList.add("in");
+    $("img").src=url;
+  }catch(err){
+    $("img").alt="The photo couldn't load. Check that it's uploaded to "+PHOTO_PATH+" in Firebase Storage.";
+  }
+});
+</script>
+</body>
+</html>
